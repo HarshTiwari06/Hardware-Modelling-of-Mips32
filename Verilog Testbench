@@ -1,0 +1,61 @@
+`timescale 1ns/1ps
+
+module mips32_tb;
+
+reg clk1, clk2;
+integer k;
+
+mips32 uut (clk1, clk2);
+
+// Clock generation
+initial
+begin
+    clk1 = 0;
+    clk2 = 0;
+    forever begin
+        #5 clk1 = 1;
+        #5 clk1 = 0;
+        #5 clk2 = 1;
+        #5 clk2 = 0;
+    end
+end
+
+// Initialize Registers
+initial
+begin
+    for(k = 0; k < 32; k = k + 1)
+        uut.Reg[k] = 0;
+end
+
+// Initialize Memory and Program
+initial
+begin
+    // Example Program
+    // R1 = 10
+    // R2 = 20
+    // R3 = R1 + R2
+    // Store result to memory
+    // Halt
+
+    uut.mem[0] = {6'b001010,5'b00000,5'b00001,16'd10};   // addi R1,R0,10
+    uut.mem[1] = {6'b001010,5'b00000,5'b00010,16'd20};   // addi R2,R0,20
+    uut.mem[2] = {6'b000000,5'b00001,5'b00010,5'b00011,11'd0}; // add R3,R1,R2
+    uut.mem[3] = {6'b001001,5'b00000,5'b00011,16'd5};    // sw R3,5(R0)
+    uut.mem[4] = {6'b111111,26'd0};                      // hlt
+
+    uut.pc = 0;
+    uut.halted = 0;
+    uut.taken_branch = 0;
+
+    #200 $finish;
+end
+
+// Monitor values
+initial
+begin
+    $monitor("Time=%0t PC=%0d R1=%0d R2=%0d R3=%0d MEM[5]=%0d Halted=%b",
+              $time, uut.pc, uut.Reg[1], uut.Reg[2],
+              uut.Reg[3], uut.mem[5], uut.halted);
+end
+
+endmodule
