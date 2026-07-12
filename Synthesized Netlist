@@ -1,0 +1,17 @@
+sorry guys the synthesized netlist was very large file 1300060 lines of code so cant be pushed so here are the commands you can get it
+1st write verilog code in a file at your unbuntu system
+then launch yosys 
+read_verilog "code address"
+proc
+opt
+hierarchy -top mips32
+opt
+memory
+opt
+stat
+techmap
+stat
+show
+dfflibmap -liberty file address
+abc -liberty file address
+stat -liberty file address
