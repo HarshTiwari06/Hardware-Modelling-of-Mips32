@@ -1,0 +1,89 @@
+###############################################################################
+# SDC Constraints for module: mips32
+# Two-phase non-overlapping clocking pipelined MIPS (5-stage)
+#   clk1 -> IF, EX, WB register stages
+#   clk2 -> ID, MEM register stages
+#
+# Assumption: clk1 and clk2 are two non-overlapping phases derived from the
+# same reference period, each active for half the cycle. Adjust CLK_PERIOD
+# to your target technology / performance goal.
+###############################################################################
+
+set CLK_PERIOD   10.0
+set CLK_HALF     [expr {$CLK_PERIOD / 2.0}]
+set NON_OVERLAP  1.0
+;# gap enforced between the two phases so they never overlap
+
+###############################################################################
+# 1. Primary clocks
+###############################################################################
+# clk1 : high from 0 -> (CLK_HALF - NON_OVERLAP)
+create_clock -name clk1 -period $CLK_PERIOD \
+    -waveform [list 0 [expr {$CLK_HALF - $NON_OVERLAP}]] [get_ports clk1]
+
+# clk2 : high from CLK_HALF -> (CLK_PERIOD - NON_OVERLAP)
+create_clock -name clk2 -period $CLK_PERIOD \
+    -waveform [list $CLK_HALF [expr {$CLK_PERIOD - $NON_OVERLAP}]] [get_ports clk2]
+
+# clk1 and clk2 are related (same source, phase shifted) -- do NOT exclude
+# them from each other with set_clock_groups. Real data crosses between them
+# every cycle (if_id_ir, id_ex_*, ex_mem_*, mem_wb_* regs), so the tool must
+# time these paths normally, half a cycle apart.
+
+###############################################################################
+# 2. Clock uncertainty / transition / latency
+###############################################################################
+set_clock_uncertainty -setup 0.15 [get_clocks {clk1 clk2}]
+set_clock_uncertainty -hold  0.08 [get_clocks {clk1 clk2}]
+set_clock_transition  0.10 [get_clocks {clk1 clk2}]
+
+# If clk1/clk2 come from an off-chip phase generator with known skew, model
+# it here instead of assuming ideal network, e.g.:
+# set_clock_latency -source 0.3 [get_clocks clk1]
+# set_clock_latency -source 0.5 [get_clocks clk2]
+
+###############################################################################
+# 3. Input / output delays
+###############################################################################
+# No dedicated data inputs other than the clocks themselves (mem/Reg are
+# loaded internally / via testbench force in simulation). If you add an
+# external load/reset/interface port, constrain it here, e.g.:
+# set_input_delay  -clock clk1 2.0 [get_ports rst_n]
+
+set_output_delay -clock clk1 2.0 [get_ports {pc_out ir_out alu_out halted_out}]
+set_output_delay -clock clk2 2.0 [get_ports {pc_out ir_out alu_out halted_out}]
+
+###############################################################################
+# 4. Design rule / environment constraints (generic, adjust to your library)
+###############################################################################
+set_max_transition 0.5  [current_design]
+set_max_fanout      16   [current_design]
+set_max_capacitance 0.2  [current_design]
+
+# set_driving_cell -lib_cell <buf_cell> [get_ports {clk1 clk2}]
+# set_load 0.05 [all_outputs]
+
+###############################################################################
+# 5. False paths / multicycle paths
+###############################################################################
+# taken_branch is written combinationally-timed (set on clk1 in the IF block,
+# cleared on clk1 in the EX block) and only read within the same domain --
+# no cross-clock false path needed for it specifically.
+
+# If you add a reset, make it a false path for setup/hold (async reset
+# recovery/removal should instead be constrained explicitly):
+# set_false_path -from [get_ports rst_n]
+
+# There is currently NO reset in this RTL (pc, halted, Reg[], mem[] all power
+# up as X). Add one before tapeout; until then there is nothing to constrain
+# here, but treat this as an open design issue, not just a timing note.
+
+###############################################################################
+# 6. Notes on non-synthesizable / costly constructs (for STA sanity, not SDC)
+###############################################################################
+# - reg [31:0] mem [0:1023]  (1024 x 32) and Reg[0:31] should be mapped to a
+#   real SRAM / register-file macro in synthesis, not 32K+ flip-flops. If your
+#   flow instead infers flops for `mem`, expect this SDC's max_transition /
+#   max_fanout numbers to need considerable relaxation.
+# - The #2 delays in the RTL are simulation-only (nonblocking assignment
+#   delays) and are ignored by synthesis; they do not appear in this SDC.
